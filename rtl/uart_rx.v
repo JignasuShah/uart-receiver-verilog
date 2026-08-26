@@ -2,13 +2,15 @@ module uart_rx (
     input clk, 
     input rst, 
     input rx_in, 
-    input baud_tick,
+    input rx_en,
     output reg [7:0] rx_out, 
     output reg rx_valid
 ); 
 
+    reg sync_flipflop_one, sync_flipflop_two; 
     reg [1:0] state_reg, next_state; 
     reg [2:0] bit_counter; 
+    reg [2:0] sample_tick_counter; 
     reg [7:0] bit_reg; 
     
 
@@ -21,36 +23,76 @@ module uart_rx (
     always @(posedge clk) begin
         if (rst) begin
             state_reg <= IDLE;
-        end
-        else begin
-            state_reg <= next_state; 
-        end
-    end
-
-
-    always @(posedge clk) begin
-        if (rst) begin
             bit_counter <= 3'd0; 
             bit_reg <= 8'd0; 
             rx_out <= 8'd0; 
-            rx_valid <= 1'd0;
-        end
-        else if (state_reg == IDLE) begin
-            bit_counter <= 3'd0; 
-            bit_reg <= 8'd0; 
-        end
-        else if (state_reg == IN_STREAM && baud_tick) begin
-            bit_reg <= {rx_in, bit_reg[7:1]}; 
-            bit_counter <= bit_counter + 1; 
-        end
-        else if (state_reg == STOP && baud_tick && rx_in) begin
-            rx_valid <= 1'b1; 
-            rx_out <= bit_reg; 
+            rx_valid <= 1'd0; 
+            sample_tick_counter <= 3'd0; 
         end
         else begin
-            rx_valid <= 1'b0;
+            state_reg <= next_state; 
+
+
+            if (state_reg == IDLE) begin
+                rx_valid <= 1'd0; 
+                bit_counter <= 3'd0; 
+                bit_reg <= 8'd0; 
+                sample_tick_counter <= 3'd0; 
+            end 
+
+            else if (state_reg == START) begin
+                if (rx_en) begin
+                    if (sample_tick_counter == 3'd3) begin
+                        sample_tick_counter <= 3'd0; 
+                    end
+                    else begin
+                        sample_tick_counter <= sample_tick_counter + 1; 
+                    end
+                end
+            end
+
+            else if (state_reg == IN_STREAM) begin
+                if (rx_en) begin
+                    if (sample_tick_counter == 3'd7) begin
+                        sample_tick_counter <= 3'd0; 
+                        bit_counter <= bit_counter + 1; 
+                        bit_reg <= {sync_flipflop_two, bit_reg[7:1]};
+                    end
+                    else begin
+                        sample_tick_counter <= sample_tick_counter + 1; 
+                    end
+                end
+            end
+            
+
+            else if (state_reg == STOP) begin
+                if (rx_en) begin
+                    sample_tick_counter <= sample_tick_counter + 1; 
+                    if (sample_tick_counter == 7 && sync_flipflop_two) begin
+                        rx_valid <= 1'b1; 
+                        rx_out <= bit_reg; 
+                    end
+                    else if (sample_tick_counter == 7 && ~sync_flipflop_two) begin
+                        rx_valid <= 1'b0; 
+                    end
+                end
+            end
         end
     end
+
+    always @(posedge clk) begin
+        if (rst) begin
+            sync_flipflop_one <= 1'b1; 
+            sync_flipflop_two <= 1'b1; 
+        end
+        else begin
+            sync_flipflop_one <= rx_in; 
+            sync_flipflop_two <= sync_flipflop_one; 
+        end
+        
+        
+    end
+
 
     always @(*) begin
 
@@ -60,7 +102,7 @@ module uart_rx (
         IDLE: begin
         
 
-            if (~rx_in) begin
+            if (~sync_flipflop_two) begin
                 next_state = START; 
             end
             else begin
@@ -70,7 +112,7 @@ module uart_rx (
 
         START: begin
             
-            if (baud_tick) begin
+            if (rx_en && sample_tick_counter == 3) begin
                 next_state = IN_STREAM;
             end 
             else begin
@@ -81,7 +123,7 @@ module uart_rx (
 
         IN_STREAM: begin
 
-            if (baud_tick && bit_counter == 7) begin
+            if (rx_en && bit_counter == 7 && sample_tick_counter == 7) begin
                 next_state = STOP; 
             end
             else begin
@@ -90,7 +132,7 @@ module uart_rx (
         end
 
         STOP: begin
-            if (rx_in && baud_tick) begin
+            if (rx_en && sample_tick_counter == 7) begin
                 next_state = IDLE; 
             end
         end

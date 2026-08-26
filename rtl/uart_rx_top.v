@@ -1,4 +1,7 @@
-module uart_rx_top (
+module uart_rx_top #(
+    parameter CLK_FREQ = 50000000,
+    parameter BAUD_RATE = 115200
+) (
     input clk, 
     input rst, 
     input rx_in, 
@@ -7,7 +10,7 @@ module uart_rx_top (
 );
 
     wire sample_tick; 
-    baud_generator#(50000000, 115200) gen(clk, rst, sample_tick); 
-    uart_rx receiver(clk, rst, rx_in, sample_tick, rx_out, rx_valid); 
+    baud_generator#(.CLK_FREQ(CLK_FREQ), .BAUD_RATE(BAUD_RATE)) gen(.clk(clk), .rst(rst), .sample_tick(sample_tick)); 
+    uart_rx receiver(.clk(clk), .rst(rst), .rx_in(rx_in), .rx_en(sample_tick), .rx_out(rx_out), .rx_valid(rx_valid)); 
 
 endmodule 

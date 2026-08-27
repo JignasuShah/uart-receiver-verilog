@@ -20,13 +20,16 @@ initial begin
     #40; 
     rst = 1'b0; 
     send_byte(8'b10101010, 1'b0);
+    #20;
+    $finish; 
 end
 
 task send_byte (
 input [7:0] data, 
 input corrupt_stop_bit
 );
-real bit_rate = 1000000000.0 / 115200; 
+
+automatic real bit_rate = 1000000000.0 / 115200; 
 integer i; 
 
 
@@ -40,6 +43,9 @@ for (i = 0; i < 8; i = i + 1) begin
 end
 
 rx_in = (corrupt_stop_bit) ? 1'b0 : 1'b1; 
+# bit_rate; 
+
+rx_in = 1'b1; 
 # bit_rate; 
 
 endtask
